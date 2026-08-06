@@ -72,7 +72,7 @@ target_distribution(eg::RejectionSampler) = eg.target
 RejectionSamplers.maximum_value(eg::RejectionSampler) = eg.max_value
 KernelAbstractions.get_backend(eg::RejectionSampler) = eg.backend
 
-### filter scan
+### filter scan (directly on buffers)
 
 @kernel inbounds = true function _filter_scan(
         max_val,
@@ -139,7 +139,6 @@ function generate_proposals!(
 end
 
 function generate_probabilities!(rng, eg::RejectionSampler, batch::BatchBuffer)
-    #rand!(rng,batch.u01)
     backend = get_backend(eg)
     _gen_prob_kernel!(backend, 32)(
         rng,
@@ -277,6 +276,283 @@ function sample_multi_stage(
 
     # in-place sampling
     sample_multi_stage!(rng, eg, batch, output, res_size)
+
+    return output
+end
+
+
+### single kernel
+
+@kernel inbounds = true function sample_batch_kernel(
+        rng, target, proposal, max_val, batch, output
+    )
+
+    ### 1. generate trials
+    batch_idx = @index(Global, Linear) # reuse this! -> BATCH_INDEX
+    sample = RejectionSamplers._rand_single(rng, proposal)
+    setsample!(batch, sample, batch_idx) # must this be done here?
+
+    ### 2. generate probabilities
+    batch.u01[batch_idx] = rand(rng, weight_type(batch)) # must this be written?
+
+    ### 3. compute target and update weight
+    I = @index(Global) # reuse from above! -> BATCH_INDEX
+
+    @inbounds begin
+        # gets the proposed value from above
+        x = getvalue(batch, batch_idx)
+
+        # gets the weight from the proposal above
+        proposal_weight = getweight(batch, batch_idx)
+
+        # multiplies the proposal weight with the target weight
+        setweight!(batch, proposal_weight * RejectionSamplers._compute(target, x), batch_idx)
+    end
+
+    ### 4. filter scan
+    local_accepted_count = @localmem Int32 (1,)
+    global_accepted_idx = @localmem Int32 (1,)
+
+    thread_idx = @index(Local, Linear)
+
+    if thread_idx == 1
+        local_accepted_count[1] = 0
+    end
+    @synchronize
+
+    # filter using randoms
+
+    # uses updated weights from above
+    weight = getweight(batch, batch_idx)
+
+    # uses probabilities from above
+    random = batch.u01[batch_idx]
+
+    local_accepted_idx = @private Int32 (1,)
+    local_accepted_idx[1] = -one(Int32)
+
+    if weight >= max_val * random
+        local_accepted_idx[1] = Atomix.@atomic local_accepted_count[1] += 1
+    end
+    @synchronize
+
+    # increase global output buffer index
+    if thread_idx == 1
+        temp = local_accepted_count[1]
+        global_accepted_idx[1] = Atomix.@atomic output.level[1] += temp
+        # this seems pointless but there doesn't seem to be an atomicadd that returns
+        # the previous value in Atomix currently
+        global_accepted_idx[1] -= local_accepted_count[1]
+    end
+    @synchronize
+
+    # flush to global output
+    if local_accepted_idx[1] != -one(Int32)
+        idx1 = global_accepted_idx[1] + local_accepted_idx[1]
+
+        # copies the batch value to output if excepted
+        setvalue!(output, getvalue(batch, batch_idx), idx1)
+
+        # update weights
+        # update batch weight and copy to output
+        setweight!(
+            output,
+            max(one(weight_type(output)), getweight(batch, batch_idx) / max_val),
+            idx1
+        )
+    end
+end
+
+function sample_single_stage!(
+        rng,
+        eg::RejectionSampler,
+        batch::BatchBuffer,
+        output::OutBuffer,
+        res_size
+    )
+
+    backend = get_backend(eg)
+    target = target_distribution(eg)
+    proposal = proposal_distribution(eg)
+    max_val = maximum_value(eg)
+
+    sample_kernel = sample_batch_kernel(backend, 32)
+
+    # Main loop
+    while true
+        sample_kernel(
+            rng,
+            target,
+            proposal,
+            max_val,
+            batch,
+            output;
+            ndrange = length(batch)
+        )
+
+        if Vector(output.level)[1] >= res_size
+            break
+        end
+    end
+
+
+    return nothing
+end
+
+function sample_single_stage(
+        rng,
+        eg::RejectionSampler,
+        res_size,
+        batch_size,
+    )
+
+    # Allocate batch buffers
+    batch = BatchBuffer(
+        get_backend(eg),
+        input_type(eg),
+        output_type(eg),
+        batch_size
+    )
+
+    # Allocate output buffers
+    output = OutBuffer(
+        get_backend(eg),
+        input_type(eg),
+        output_type(eg),
+        res_size + batch_size # one additional batch for safety
+    )
+
+    # in-place sampling
+    sample_single_stage!(rng, eg, batch, output, res_size)
+
+    return output
+end
+
+### single kernel (batch less)
+
+@kernel inbounds = true function sample_batchless_kernel(
+        rng, target, proposal, max_val, output
+    )
+
+    ### 1. generate trials
+    trial_sample = RejectionSamplers._rand_single(rng, proposal)
+
+    ### 2. generate probabilities
+    u01 = @private weight_type(output) (1,)
+    u01[1] = rand(rng, weight_type(output))
+
+    ### 3. compute target and update weight
+    # gets the proposed value from above
+    proposal_value = @private value_type(output) (1,)
+    proposal_value[1] = trial_sample.value
+    # gets the weight from the proposal above
+    proposal_weight = @private weight_type(output) (1,)
+    proposal_weight[1] = trial_sample.weight
+    # multiplies the proposal weight with the target weight
+
+    target_weight = @private weight_type(output) (1,)
+    target_weight[1] = proposal_weight[1] * RejectionSamplers._compute(target, proposal_value[1])
+
+    ### 4. filter scan
+    local_accepted_count = @localmem Int32 (1,)
+    global_accepted_idx = @localmem Int32 (1,)
+
+    thread_idx = @index(Local, Linear)
+
+    if thread_idx == 1
+        local_accepted_count[1] = 0
+    end
+    @synchronize
+
+    # rejection filter
+
+    local_accepted_idx = @private Int32 (1,)
+    local_accepted_idx[1] = -one(Int32)
+
+    if target_weight[1] >= max_val * u01[1]
+        local_accepted_idx[1] = Atomix.@atomic local_accepted_count[1] += 1
+    end
+    @synchronize
+
+    # increase global output buffer index
+    if thread_idx == 1
+        temp = local_accepted_count[1]
+        global_accepted_idx[1] = Atomix.@atomic output.level[1] += temp
+        # this seems pointless but there doesn't seem to be an atomicadd that returns
+        # the previous value in Atomix currently
+        global_accepted_idx[1] -= local_accepted_count[1]
+    end
+    @synchronize
+
+    # flush to global output
+    if local_accepted_idx[1] != -one(Int32)
+        idx1 = global_accepted_idx[1] + local_accepted_idx[1]
+
+        # copies the batch value to output if excepted
+        setvalue!(output, proposal_value[1], idx1)
+
+        # update weights
+        # update batch weight and copy to output
+        setweight!(
+            output,
+            max(one(weight_type(output)), target_weight[1] / max_val),
+            idx1
+        )
+    end
+end
+
+function sample_single_stage_batchless!(
+        rng,
+        eg::RejectionSampler,
+        output::OutBuffer,
+        res_size,
+        batch_size
+    )
+
+    backend = get_backend(eg)
+    target = target_distribution(eg)
+    proposal = proposal_distribution(eg)
+    max_val = maximum_value(eg)
+
+    sample_kernel = sample_batchless_kernel(backend, 32)
+
+    # Main loop
+    while true
+        sample_kernel(
+            rng,
+            target,
+            proposal,
+            max_val,
+            output;
+            ndrange = batch_size
+        )
+
+        if Vector(output.level)[1] >= res_size
+            break
+        end
+    end
+
+
+    return nothing
+end
+
+function sample_single_stage_batchless(
+        rng,
+        eg::RejectionSampler,
+        res_size,
+        batch_size
+    )
+
+    # Allocate output buffers
+    output = OutBuffer(
+        get_backend(eg),
+        input_type(eg),
+        output_type(eg),
+        res_size + batch_size # one additional batch for safety
+    )
+
+    # in-place sampling
+    sample_single_stage_batchless!(rng, eg, output, res_size, batch_size)
 
     return output
 end
