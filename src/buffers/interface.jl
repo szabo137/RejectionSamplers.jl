@@ -93,6 +93,10 @@ backend-specific implementation.
 """
 function setsamples! end
 
+### generics
+
+@inline Base.size(buf::AbstractBuffer) = (length(buf))
+
 
 ### getter api
 

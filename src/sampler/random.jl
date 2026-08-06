@@ -10,7 +10,8 @@ struct DeviceSide <: AbstractRNGStrategy end
 """
 function _rng_strategy end
 
-_rng_strategy(::Xoshiro) = HostSide()
+#_rng_strategy(::Xoshiro) = HostSide()
+_rng_strategy(::Xoshiro) = DeviceSide()
 _rng_strategy(::MersenneTwister) = HostSide()
 _rng_strategy(::GPUArrays.RNG) = HostSide()
 
@@ -72,8 +73,8 @@ function _rand_from_device!(
         buf::AbstractSampleBuffer,
     )
     _rand_gpu_kernel(backend, 32)(
-        rng, samples, sampler;
-        ndrange = size(samples)
+        rng, sampler, buf;
+        ndrange = size(buf)
     )
     return nothing
 end

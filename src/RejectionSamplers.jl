@@ -11,6 +11,7 @@ export HostSide, DeviceSide
 export AbstractBuffer
 export AbstractSampleBuffer
 export SampleBuffer
+export OutBuffer, BatchBuffer
 export value_type, weight_type
 export getsample, getsamples, setsample!, setsamples!
 export getvalue, getvalues, setvalue!, setvalues!
