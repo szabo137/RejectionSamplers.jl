@@ -74,7 +74,7 @@ KernelAbstractions.get_backend(eg::RejectionSampler) = eg.backend
 
 ### filter scan (directly on buffers)
 
-@kernel inbounds = true function _filter_scan(
+@kernel inbounds = true function _filter_select(
         max_val,
         batch::BatchBuffer,
         output::OutBuffer,
@@ -130,27 +130,25 @@ end
 ### multi stage implementation
 
 function generate_proposals!(
-        rng,
         eg::RejectionSampler,
         buf::BatchBuffer
     )
-    rand!(rng, proposal_distribution(eg), buf)
+    rand!(proposal_distribution(eg), buf)
     return nothing
 end
 
-function generate_probabilities!(rng, eg::RejectionSampler, batch::BatchBuffer)
+function generate_probabilities!(eg::RejectionSampler, batch::BatchBuffer)
     backend = get_backend(eg)
     _gen_prob_kernel!(backend, 32)(
-        rng,
         batch;
         ndrange = size(batch)
     )
     return nothing
 end
 
-@kernel inbounds = true function _gen_prob_kernel!(rng, batch)
+@kernel inbounds = true function _gen_prob_kernel!(batch)
     I = @index(Global)
-    batch.u01[I] = rand(rng, weight_type(batch))
+    batch.u01[I] = rand(weight_type(batch))
 end
 
 
@@ -198,7 +196,7 @@ function rejection_filter!(
     max_val = maximum_value(eg)
 
     backend = get_backend(eg)
-    _filter_scan(backend, 32)(
+    _filter_select(backend, 32)(
         max_val,
         batch,
         output;
@@ -209,7 +207,6 @@ function rejection_filter!(
 end
 
 function sample_batch_multi_stage!(
-        rng::AbstractRNG,
         eg::RejectionSampler,
         batch::BatchBuffer,
         output::OutBuffer,
@@ -217,10 +214,10 @@ function sample_batch_multi_stage!(
 
     backend = get_backend(eg)
 
-    @inline generate_proposals!(rng, eg, batch)
+    @inline generate_proposals!(eg, batch)
     #    KernelAbstractions.synchronize(backend)
 
-    @inline generate_probabilities!(rng, eg, batch)
+    @inline generate_probabilities!(eg, batch)
     #   KernelAbstractions.synchronize(backend)
 
     @inline compute_update!(eg, batch)
@@ -231,7 +228,6 @@ function sample_batch_multi_stage!(
 end
 
 function sample_multi_stage!(
-        rng,
         eg::RejectionSampler,
         batch::BatchBuffer,
         output::OutBuffer,
@@ -240,7 +236,7 @@ function sample_multi_stage!(
 
     # Main loop
     while true
-        sample_batch_multi_stage!(rng, eg, batch, output)
+        sample_batch_multi_stage!(eg, batch, output)
 
         if Vector(output.level)[1] >= res_size
             break
@@ -252,7 +248,6 @@ function sample_multi_stage!(
 end
 
 function sample_multi_stage(
-        rng,
         eg::RejectionSampler,
         res_size,
         batch_size,
@@ -275,7 +270,7 @@ function sample_multi_stage(
     )
 
     # in-place sampling
-    sample_multi_stage!(rng, eg, batch, output, res_size)
+    sample_multi_stage!(eg, batch, output, res_size)
 
     return output
 end
@@ -284,16 +279,16 @@ end
 ### single kernel
 
 @kernel inbounds = true function sample_batch_kernel(
-        rng, target, proposal, max_val, batch, output
+        target, proposal, max_val, batch, output
     )
 
     ### 1. generate trials
     batch_idx = @index(Global, Linear) # reuse this! -> BATCH_INDEX
-    sample = RejectionSamplers._rand_single(rng, proposal)
+    sample = RejectionSamplers._rand_single(proposal)
     setsample!(batch, sample, batch_idx) # must this be done here?
 
     ### 2. generate probabilities
-    batch.u01[batch_idx] = rand(rng, weight_type(batch)) # must this be written?
+    batch.u01[batch_idx] = rand(weight_type(batch)) # must this be written?
 
     ### 3. compute target and update weight
     I = @index(Global) # reuse from above! -> BATCH_INDEX
@@ -364,7 +359,6 @@ end
 end
 
 function sample_single_stage!(
-        rng,
         eg::RejectionSampler,
         batch::BatchBuffer,
         output::OutBuffer,
@@ -381,7 +375,6 @@ function sample_single_stage!(
     # Main loop
     while true
         sample_kernel(
-            rng,
             target,
             proposal,
             max_val,
@@ -400,7 +393,6 @@ function sample_single_stage!(
 end
 
 function sample_single_stage(
-        rng,
         eg::RejectionSampler,
         res_size,
         batch_size,
@@ -423,7 +415,7 @@ function sample_single_stage(
     )
 
     # in-place sampling
-    sample_single_stage!(rng, eg, batch, output, res_size)
+    sample_single_stage!(eg, batch, output, res_size)
 
     return output
 end
@@ -431,15 +423,15 @@ end
 ### single kernel (batch less)
 
 @kernel inbounds = true function sample_batchless_kernel(
-        rng, target, proposal, max_val, output
+        target, proposal, max_val, output
     )
 
     ### 1. generate trials
-    trial_sample = RejectionSamplers._rand_single(rng, proposal)
+    trial_sample = RejectionSamplers._rand_single(proposal)
 
     ### 2. generate probabilities
     u01 = @private weight_type(output) (1,)
-    u01[1] = rand(rng, weight_type(output))
+    u01[1] = rand(weight_type(output))
 
     ### 3. compute target and update weight
     # gets the proposed value from above
@@ -502,7 +494,6 @@ end
 end
 
 function sample_single_stage_batchless!(
-        rng,
         eg::RejectionSampler,
         output::OutBuffer,
         res_size,
@@ -519,7 +510,6 @@ function sample_single_stage_batchless!(
     # Main loop
     while true
         sample_kernel(
-            rng,
             target,
             proposal,
             max_val,
@@ -537,7 +527,6 @@ function sample_single_stage_batchless!(
 end
 
 function sample_single_stage_batchless(
-        rng,
         eg::RejectionSampler,
         res_size,
         batch_size
@@ -552,7 +541,7 @@ function sample_single_stage_batchless(
     )
 
     # in-place sampling
-    sample_single_stage_batchless!(rng, eg, output, res_size, batch_size)
+    sample_single_stage_batchless!(eg, output, res_size, batch_size)
 
     return output
 end

@@ -61,21 +61,16 @@ function _rand_from_host! end
 
 
 """
-    _rand_from_device!(device_side_rng, sampler, backend, buf)
+    _rand_from_device!(sampler, backend, buf)
 
-Interface function: fill `buf` with samples generated using a device-side RNG.
-
-This method is optional. It is intended for RNGs that can be invoked
-directly from within device kernels (e.g. GPU kernels). Implementations
-may launch kernels using `backend` and generate samples entirely on
-the device.
+Interface function: fill `buf` with samples generated using a device-side default RNG.
 """
 function _rand_from_device! end
 
 """
-    _rand_single(device_side_rng, sampler) -> sample
+    _rand_single(sampler) -> sample
 
-Interface function: generate a single sample using a device-side RNG.
+Interface function: generate a single sample using a device-side default RNG.
 
 This optional method is intended for use inside device kernels, where
 buffer-based sampling is not appropriate. It should return one sample
@@ -84,14 +79,10 @@ drawn according to the distribution represented by `sampler`.
 function _rand_single end
 
 """
-    allocate_buffer(rng, backend, sampler::AbstractSampler{Tv,Tw}, size) -> buf
+    allocate_buffer(backend, sampler::AbstractSampler{Tv,Tw}, size) -> buf
 
 interface function: allocate and return an `AbstractSampleBuffer` suitable for storing `size`
 samples produced by `sampler`.
 
-This optional method allows samplers to control the concrete buffer type
-and memory placement (host or device) based on the RNG and `backend`.
-If not implemented, a default buffer allocation strategy is expected
-to be used by the caller.
 """
 function allocate_buffer end

@@ -1,0 +1,17 @@
+name = "TruncatedGaussians"
+uuid = "d24b9d80-aca6-4b68-bbeb-d7d0a27f6ce2"
+version = "0.1.0"
+authors = ["Uwe Hernandez Acosta <u.hernandez@hzdr.de>"]
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+RejectionSamplers = "90f62166-f53e-5083-ac0e-6e2bf74182ae"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
+
+[compat]
+Distributions = "0.25.130"
+Random = "1.11.0"
+StaticArrays = "1.9.18"
+StatsFuns = "2.2.1"

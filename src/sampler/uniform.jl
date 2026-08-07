@@ -77,11 +77,10 @@ function _transform(
 end
 
 function RejectionSamplers._rand_single(
-        rng::AbstractRNG,
         s::UniformSampler{T, N, Ts}
     ) where {T, N, Ts}
 
-    u01 = rand(rng, Ts)
+    u01 = rand(Ts)
     return _transform(s, u01)
 end
 

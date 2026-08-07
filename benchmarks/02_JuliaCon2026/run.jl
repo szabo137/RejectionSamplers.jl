@@ -1,49 +1,102 @@
-# main structure adopted from AcceleratedKernels.jl/benchmark/runbenchmarks.jl
-
-using RejectionSamplers
-
 import Pkg
-using KernelAbstractions
 using BenchmarkTools
 using StaticArrays
+using KernelAbstractions
+using ArgParse
 
-using Random
-RNG = Xoshiro(161)
-include("utils.jl")
+using RejectionSamplers
+using TruncatedGaussians
 
-BACKENDS = ["--CUDA", "--oneAPI", "--AMDGPU", "--Metal", "--OpenCL", "--CPU"]
-b_opt_idx = in.(ARGS, Ref(BACKENDS))
+DATADIR = "data"
 
-if !@isdefined(backend_arg)
-    backend_arg = if sum(b_opt_idx) == 0
-        "--CPU"
-    elseif sum(b_opt_idx) == 1
-        only(ARGS[b_opt_idx])
-    else
-        throw(ArgumentError("More than one backend provided. Please retry with only one of $BACKENDS"))
+DIMS = [2]
+
+BACKENDS = [
+    "CUDA",
+    "oneAPI",
+    "AMDGPU",
+    "Metal",
+    #"OpenCL",
+    "CPU",
+]
+
+BENCHMARKS = [
+    "full",
+    "hotloop",
+    "batch",
+]
+
+IMPLEMENTATIONS = [
+    "multi",
+    "single-batchful",
+    "single-batchless",
+]
+IMPL_FILES = Dict(
+    "multi" => "multi_stage.jl",
+    "single-batchful" => "single_stage.jl",
+    "single-batchless" => "single_stage_batchless.jl"
+)
+
+function parse_commandline()
+    s = ArgParseSettings()
+    @add_arg_table s begin
+
+        "--backend", "-b"
+        help = "backend used for the benchmarks. Available options: $(join(BACKENDS, ", "))"
+        arg_type = String
+        default = "CPU"
+
+        "--benchmark", "--bench"
+        help = "specify which benchmark to perform. Availabe options are: $(join(BENCHMARKS, ", "))"
+        arg_type = String
+        default = "full"
+
+        "--implementation", "--impl", "-i"
+        help = "specify which implementation to use. Availabe options are: $(join(IMPLEMENTATIONS, ", "))"
+        arg_type = String
+        default = "multi"
     end
+
+    return parse_args(s)
 end
-backend_arg in BACKENDS || throw(ArgumentError("\"$backend_arg\" is not a valid backend."))
 
-# benchmarks provided by command line argument
-other_args = ARGS[.!b_opt_idx]
+NOINCLUDE = ["utils.jl"]
 
-bench_to_include = isempty(other_args) ? nothing : other_args
+### parsing arguments
+parsed_args = parse_commandline()
 
-# Files to ignore by default. Includes non-benchmark files and
-#  backends can add incompatible benchmarks to this list
-noinclude = ["utils.jl"]
+bench_arg = parsed_args["benchmark"]
+bench_arg in BENCHMARKS || throw(ArgumentError("\"$bench_arg\" unrecognized as a benchmark! Supported options are $BENCHMARKS"))
 
-if backend_arg == "--CUDA"
+impl_arg = parsed_args["implementation"]
+impl_arg in IMPLEMENTATIONS|| throw(ArgumentError("\"$impl_arg\" unrecognized as a implementation! Supported options are $IMPLEMENTATIONS"))
+
+backend_arg = parsed_args["backend"]
+backend_arg in BACKENDS || throw(ArgumentError("\"$backend_arg\" unrecognized as a backend! Supported options are $BACKENDS"))
+
+println("Parsed args:")
+
+for (arg, val) in parsed_args
+    println("  $arg  =>  $val")
+end
+
+
+### Select benchmark and implementation to run
+benchmark_path = joinpath("benchmarks", bench_arg, IMPL_FILES[impl_arg])
+@info "run benchmark from: $benchmark_path"
+
+### select backend
+if backend_arg == "CUDA"
     @info "Try using CUDA backend."
     "CUDA" in keys(Pkg.project().dependencies) ? nothing : Pkg.add("CUDA")
 
     using CUDA
+    CUDA.functional() || throw("CUDA is not functional")
     CUDA.versioninfo()
 
     const BACKEND = CUDABackend()
     const DTYPES = (Float32, Float64)
-    const RNG_BENCH = CUDA.CUDACore.Philox2x32()
+    const DEVICE = replace(lowercase(CUDA.name(d)), " " => "-")
 
     macro sb(ex...)
         return quote
@@ -51,16 +104,15 @@ if backend_arg == "--CUDA"
         end
     end
 
-    #append!(noinclude, ["sortperm.jl"])
-
 elseif backend_arg == "--oneAPI"
     @info "Try using oneAPI backend."
-    throw(ErrorException("oneAPI is currently not supported, because it has no device side RNG"))
+    throw(ArgumentError("oneAPI is currently not supported, because it has no device side RNG"))
 
     #=
     "oneAPI" in keys(Pkg.project().dependencies) ? nothing : Pkg.add("oneAPI")
 
     using oneAPI
+    oneAPI.functional() || throw("oneAPI is not functional")
     oneAPI.versioninfo()
 
     const BACKEND = oneAPIBackend()
@@ -72,37 +124,43 @@ elseif backend_arg == "--oneAPI"
         end
     end
     =#
-elseif backend_arg == "--AMDGPU"
+elseif backend_arg == "AMDGPU"
     @info "Try using AMDGPU backend."
     "AMDGPU" in keys(Pkg.project().dependencies) ? nothing : Pkg.add("AMDGPU")
 
     using AMDGPU
+    AMDGPU.functional() || throw("AMDGPU is not functional")
     AMDGPU.versioninfo()
+
 
     const BACKEND = AMDGPUBackend()
     const DTYPES = (Float32, Float64)
+    const DEVICE = replace(lowercase(AMDGPU.HIP.name(AMDGPU.device())), " " => "-")
 
     macro sb(ex...)
         return quote
             AMDGPU.@sync($(esc.(ex)...))
         end
     end
-elseif backend_arg == "--Metal"
+elseif backend_arg == "Metal"
     @info "Try using Metal backend."
     "Metal" in keys(Pkg.project().dependencies) ? nothing : Pkg.add("Metal")
 
     using Metal
+
+    Metal.functional() || throw("Metal is not functional")
+
     Metal.versioninfo()
 
     const BACKEND = MetalBackend()
     const DTYPES = (Float32,)
+    const DEVICE = replace(lowercase(string(Metal.device().name)), " " => "-")
 
     macro sb(ex...)
         return quote
             Metal.@sync($(esc.(ex)...))
         end
     end
-    #append!(noinclude, ["sort.jl", "sortperm.jl"])
 
     #=
 # TODO: add OpenCL to supported backends
@@ -117,7 +175,7 @@ elseif backend_arg == "--OpenCL"
     end
     =#
 
-elseif backend_arg == "--CPU"
+elseif backend_arg == "CPU"
     @info "Try using CPU backend."
 
     "InteractiveUtils" in keys(Pkg.project().dependencies) ? nothing : Pkg.add("InteractiveUtils")
@@ -126,6 +184,7 @@ elseif backend_arg == "--CPU"
 
     const BACKEND = CPU()
     const DTYPES = (Float32, Float64)
+    const DEVICE = Base.Sys.CPU_NAME
 
     macro sb(ex...)
         return quote
@@ -135,7 +194,7 @@ elseif backend_arg == "--CPU"
 end
 
 
-if backend_arg == "--CUDA"
+if backend_arg == "CUDA"
     function reclaim_mem()
         GC.gc(true)
         return CUDA.reclaim()
@@ -148,30 +207,45 @@ else
     end
 end
 
+
 include("benchmarks/utils.jl")
 
-# Select benchmarks to run
-benches = filter(x -> x ∉ noinclude, Base.readdir("benchmarks"))
-if !isempty(other_args)
-    benches = filter(x -> any(startswith.(Ref(x), other_args)), benches)
-end
-
 SUITE = BenchmarkGroup()
-for b in benches
-    include(joinpath("benchmarks", b))
-end
+include(benchmark_path)
 
 @info "Preparing benchmarks"
-warmup(SUITE; verbose = false)
-tune!(SUITE)
+
+@info "Performing warmup"
+warmup(SUITE; verbose = true)
+
+#=
+### read "tune" flag from commandline
+if tune
+    @info "Performing tuning"
+    tune!(SUITE, verbose = true)
+    ### save tuning parameters
+else
+    ### load pre-tuned parameters
+    ### update parameters of SUITE
+end
+=#
+@info "Performing tuning"
+tune!(SUITE, verbose = true)
 
 reclaim_mem()
 
 @info "Running benchmarks"
 results = run(SUITE, verbose = true)
 
-@show SUITE
 
-data_filepath = joinpath("data", "bench_$(build_backend_name(backend_arg)).json")
-BenchmarkTools.save(data_filepath, median(results))
+data_path = joinpath(DATADIR, backend_arg, bench_arg)
+mkpath(data_path)  # ensure output directory exists
+
+data_filepath = joinpath(data_path, "bench_$(impl_arg).json")
+BenchmarkTools.save(data_filepath, results)
 @info "Save results to $data_filepath"
+
+# TODO:
+# - implement BenchInfo holding at least (backend,dtypes,device)
+# - implement a way of pre-tuning and loading pre-tuned parameters (use a flag --tune in
+# ArgParse)

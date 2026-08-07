@@ -24,17 +24,15 @@ export filter_scan
 # abstract sampler
 export AbstractSampler, allocate_buffer
 
-# proposal
-export propose!
-export UniformUnivariateProposal
-export UniformProposal
-
 # maximum finding
 export NaiveMaxFinder, QuantileReductionMethod
 
-# event generator
-export EventGenerator
+# Rejection Sampler
+export RejectionSampler
+export UniformSampler
 export input_type, output_type, proposal_distribution, target_distribution, maximum_value
+
+export sample_multi_stage, sample_single_stage, sample_single_stage_batchless
 
 
 using Distributions
@@ -46,6 +44,7 @@ using GPUArrays
 using StaticArrays
 using StaticArrays: sacollect
 using StructArrays
+using ConstructionBase
 
 include("patches/gpuarrays.jl")
 
@@ -58,33 +57,31 @@ include("buffers/samplebuffer.jl")
 
 include("filter_scan.jl")
 
-include("proposal/random.jl")
-include("proposal/interface.jl")
-include("proposal/generics.jl")
-include("proposal/uniform.jl")
+include("target.jl")
 
 include("sampler/interface.jl")
 include("sampler/random.jl")
 include("sampler/utils.jl")
+include("sampler/rejection_sampler.jl")
+include("sampler/uniform.jl")
 
-include("target.jl")
-
-include("generation/sampler.jl")
-include("generation/buffers.jl")
-include("generation/stages.jl")
-include("generation/generate.jl")
 
 # max finding
+# FIXME: remove ProposalDist from MaxFinder
+#=
 include("max_finder/types.jl")
 include("max_finder/findmax.jl")
 include("max_finder/naive.jl")
 include("max_finder/quantile_reduction.jl")
+=#
 
 
 include("plotting.jl")
 
 include("testutils/TestUtils.jl")
 
-include("mocks/Mocks.jl")
+
+# FIXME: remove ProposalDist from MaxFinder
+#include("mocks/Mocks.jl")
 
 end
