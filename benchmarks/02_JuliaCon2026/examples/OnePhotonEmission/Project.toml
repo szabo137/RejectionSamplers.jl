@@ -1,0 +1,21 @@
+name = "OnePhotonEmission"
+uuid = "a2b5366a-8ee0-4ca9-9230-53f3f5b4c1f8"
+version = "0.1.0"
+authors = ["Uwe Hernandez Acosta <u.hernandez@hzdr.de>"]
+
+[deps]
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+QEDFeynmanDiagrams = "3232ad24-8ec1-4588-843e-e2ed2eae1ff3"
+QEDbase = "10e22c08-3ccb-4172-bfcf-7d7aa3d04d93"
+QEDcore = "35dc0263-cb5f-4c33-a114-1d7f54ab753e"
+QEDprocesses = "46de9c38-1bb3-4547-a1ec-da24d767fdad"
+RejectionSamplers = "90f62166-f53e-5083-ac0e-6e2bf74182ae"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+KernelAbstractions = "0.9.42"
+QEDFeynmanDiagrams = "0.1.2"
+QEDbase = "0.5.2"
+QEDcore = "0.4.1"
+QEDprocesses = "0.5.1"
+StaticArrays = "1.9.18"
