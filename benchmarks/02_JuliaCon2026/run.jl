@@ -9,6 +9,8 @@ using TruncatedGaussians
 
 DATADIR = "data"
 
+SAVE_RESULTS = true
+
 DIMS = [2]
 
 BACKENDS = [
@@ -30,11 +32,13 @@ IMPLEMENTATIONS = [
     "multi",
     "single-batchful",
     "single-batchless",
+    "single-naive",
 ]
 IMPL_FILES = Dict(
     "multi" => "multi_stage.jl",
     "single-batchful" => "single_stage.jl",
-    "single-batchless" => "single_stage_batchless.jl"
+    "single-batchless" => "single_stage_batchless.jl",
+    "single-naive" => "single_stage_naive.jl"
 )
 
 function parse_commandline()
@@ -237,13 +241,17 @@ reclaim_mem()
 @info "Running benchmarks"
 results = run(SUITE, verbose = true)
 
+if SAVE_RESULTS
+    data_path = joinpath(DATADIR, backend_arg, bench_arg)
+    mkpath(data_path)  # ensure output directory exists
 
-data_path = joinpath(DATADIR, backend_arg, bench_arg)
-mkpath(data_path)  # ensure output directory exists
-
-data_filepath = joinpath(data_path, "bench_$(impl_arg).json")
-BenchmarkTools.save(data_filepath, results)
-@info "Save results to $data_filepath"
+    data_filepath = joinpath(data_path, "bench_$(impl_arg).json")
+    BenchmarkTools.save(data_filepath, results)
+    @info "Save results to $data_filepath"
+else
+    @warn "Results of the benchmark are not saved."
+    println(results)
+end
 
 # TODO:
 # - implement BenchInfo holding at least (backend,dtypes,device)

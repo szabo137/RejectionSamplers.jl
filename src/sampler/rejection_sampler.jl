@@ -545,3 +545,84 @@ function sample_single_stage_batchless(
 
     return output
 end
+
+### naive implementation
+
+@kernel inbounds = true function sample_naive_batch_kernel(
+        target, proposal, max_val, output
+    )
+
+    I = @index(Global, Linear)
+
+    accepted = false
+
+    while !accepted
+        ### 1. generate trials
+        trial_sample = RejectionSamplers._rand_single(proposal)
+
+        ### 2. generate probabilities
+        u01 = rand(weight_type(output))
+
+        ### 3. compute target and update weight
+        # gets the proposed value from above
+        proposal_value = trial_sample.value
+        # gets the weight from the proposal above
+        proposal_weight = trial_sample.weight
+        # multiplies the proposal weight with the target weight
+
+        target_weight = proposal_weight * RejectionSamplers._compute(target, proposal_value)
+
+        if target_weight >= max_val * u01
+            accepted = true
+
+            setvalue!(output, proposal_value, I)
+
+            setweight!(
+                output,
+                max(one(weight_type(output)), target_weight / max_val),
+                I
+            )
+        end
+    end
+end
+
+function sample_naive_single_stage!(
+        eg::RejectionSampler,
+        output::OutBuffer,
+        res_size,
+    )
+
+    backend = get_backend(eg)
+    target = target_distribution(eg)
+    proposal = proposal_distribution(eg)
+    max_val = maximum_value(eg)
+
+    sample_kernel = sample_naive_batch_kernel(backend, 32)
+    sample_kernel(
+        target,
+        proposal,
+        max_val,
+        output;
+        ndrange = res_size
+    )
+    return nothing
+end
+
+function sample_naive_single_stage(
+        eg::RejectionSampler,
+        res_size,
+    )
+
+    # Allocate output buffers
+    output = OutBuffer(
+        get_backend(eg),
+        input_type(eg),
+        output_type(eg),
+        res_size
+    )
+
+    # in-place sampling
+    sample_naive_single_stage!(eg, output, res_size)
+
+    return output
+end

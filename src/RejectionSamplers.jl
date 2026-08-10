@@ -32,7 +32,7 @@ export RejectionSampler
 export UniformSampler
 export input_type, output_type, proposal_distribution, target_distribution, maximum_value
 
-export sample_multi_stage, sample_single_stage, sample_single_stage_batchless
+export sample_multi_stage, sample_single_stage, sample_single_stage_batchless, sample_naive_single_stage
 
 
 using Distributions
