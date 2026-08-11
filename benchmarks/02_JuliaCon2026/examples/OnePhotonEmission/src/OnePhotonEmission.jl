@@ -1,7 +1,8 @@
 module OnePhotonEmission
 using RejectionSamplers
-using QEDprocesses
+using QEDFeynmanDiagrams
 using QEDcore
+using QEDprocesses
 using StaticArrays
 
 export OnePhotonEmission

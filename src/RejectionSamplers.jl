@@ -68,12 +68,10 @@ include("sampler/uniform.jl")
 
 # max finding
 # FIXME: remove ProposalDist from MaxFinder
-#=
 include("max_finder/types.jl")
 include("max_finder/findmax.jl")
 include("max_finder/naive.jl")
 include("max_finder/quantile_reduction.jl")
-=#
 
 
 include("plotting.jl")

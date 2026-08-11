@@ -6,12 +6,16 @@ using ArgParse
 
 using RejectionSamplers
 using TruncatedGaussians
+using OnePhotonEmission
 
 DATADIR = "data"
 
 SAVE_RESULTS = true
 
-DIMS = [2]
+PROBLEMS = [
+    "truncated-gaussian",
+    "one-photon-emission",
+]
 
 BACKENDS = [
     "CUDA",
@@ -59,6 +63,19 @@ function parse_commandline()
         help = "specify which implementation to use. Availabe options are: $(join(IMPLEMENTATIONS, ", "))"
         arg_type = String
         default = "multi"
+
+        "--problem-size", "--size", "-s"
+        help = "specify the problem size, e.g. the number of dimensions, or the number of particles"
+        arg_type = Int
+        default = 1
+
+        "--problem", "-p"
+        help = "specify the problem to benchmark. Currently, only truncated-gaussian, and one-photon-emission are supported"
+        arg_type = String
+
+        "--tune", "-t"
+        help = "enable tuning before benchmarking"
+        action = :store_true
     end
 
     return parse_args(s)
@@ -69,6 +86,14 @@ NOINCLUDE = ["utils.jl"]
 ### parsing arguments
 parsed_args = parse_commandline()
 
+problem_arg = parsed_args["problem"]
+problem_arg in PROBLEMS || throw(ArgumentError("\"$problem_arg\" unrecognized as problem! Supported options are $PROBLEMS"))
+
+problem_size_arg = parsed_args["problem-size"]
+if problem_arg == "one-photon-emission"
+    problem_size_arg <= 4 || throw(ArgumentError("currently, only up to 5 photons are supported."))
+end
+
 bench_arg = parsed_args["benchmark"]
 bench_arg in BENCHMARKS || throw(ArgumentError("\"$bench_arg\" unrecognized as a benchmark! Supported options are $BENCHMARKS"))
 
@@ -77,6 +102,8 @@ impl_arg in IMPLEMENTATIONS|| throw(ArgumentError("\"$impl_arg\" unrecognized as
 
 backend_arg = parsed_args["backend"]
 backend_arg in BACKENDS || throw(ArgumentError("\"$backend_arg\" unrecognized as a backend! Supported options are $BACKENDS"))
+
+tune_arg = parsed_args["tune"]
 
 println("Parsed args:")
 
@@ -233,8 +260,10 @@ else
     ### update parameters of SUITE
 end
 =#
-@info "Performing tuning"
-tune!(SUITE, verbose = true)
+if tune_arg
+    @info "Performing tuning"
+    tune!(SUITE, verbose = true)
+end
 
 reclaim_mem()
 
@@ -242,10 +271,10 @@ reclaim_mem()
 results = run(SUITE, verbose = true)
 
 if SAVE_RESULTS
-    data_path = joinpath(DATADIR, backend_arg, bench_arg)
+    data_path = joinpath(DATADIR, problem_arg, backend_arg, bench_arg)
     mkpath(data_path)  # ensure output directory exists
 
-    data_filepath = joinpath(data_path, "bench_$(impl_arg).json")
+    data_filepath = joinpath(data_path, "bench_$(impl_arg)_size=$(problem_size_arg).json")
     BenchmarkTools.save(data_filepath, results)
     @info "Save results to $data_filepath"
 else

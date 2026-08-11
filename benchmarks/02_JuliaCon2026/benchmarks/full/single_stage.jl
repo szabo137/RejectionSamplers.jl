@@ -10,26 +10,22 @@ for out_type in DTYPES
 
     local _group = addgroup!(group, "$out_type")
 
-    for dim in DIMS
 
-        local __group = addgroup!(_group, dim)
+    local __group = addgroup!(_group, problem_size_arg)
 
-        in_type = SVector{dim, out_type}
+    target, proposal, max_val, in_type = generate_setup(problem_arg, out_type, problem_size_arg)
 
-        target, proposal, max_val = generate_setup(out_type, dim)
+    SAMPLER = RejectionSampler(target, proposal, max_val; backend = BACKEND, in_type = in_type, out_type = out_type)
 
-        SAMPLER = RejectionSampler(target, proposal, max_val; backend = BACKEND, in_type = in_type, out_type = out_type)
+    for N in nevent_vec
+        for batch_size in batch_size_vec
+            @info "Adding benchmark problem: dtype=$out_type, problem_size_arg=$problem_size_arg, Neve=$N, Nbatch=$batch_size"
 
-        for N in nevent_vec
-            for batch_size in batch_size_vec
-                @info "Adding benchmark problem: dtype=$out_type, dim=$dim, Neve=$N, Nbatch=$batch_size"
-
-                __group[batch_size][N] = @benchmarkable @sb(
-                    begin
-                        sample_single_stage($SAMPLER, $N, $batch_size)
-                    end
-                )
-            end
+            __group[batch_size][N] = @benchmarkable @sb(
+                begin
+                    sample_single_stage($SAMPLER, $N, $batch_size)
+                end
+            )
         end
     end
 end

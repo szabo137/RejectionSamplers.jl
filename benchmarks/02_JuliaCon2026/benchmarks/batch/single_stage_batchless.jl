@@ -10,46 +10,43 @@ for out_type in DTYPES
 
     local _group = addgroup!(group, "$out_type")
 
-    for dim in DIMS
 
-        local __group = addgroup!(_group, dim)
+    local __group = addgroup!(_group, problem_size_arg)
 
-        in_type = SVector{dim, out_type}
 
-        target, proposal, max_val = generate_setup(out_type, dim)
+    target, proposal, max_val, in_type = generate_setup(problem_arg, out_type, problem_size_arg)
 
-        SAMPLER = RejectionSampler(target, proposal, max_val; backend = BACKEND, in_type = in_type, out_type = out_type)
+    SAMPLER = RejectionSampler(target, proposal, max_val; backend = BACKEND, in_type = in_type, out_type = out_type)
 
-        for N in nevent_vec
-            for batch_size in batch_size_vec
-                @info "Adding benchmark problem: dtype=$out_type, dim=$dim, Neve=$N, Nbatch=$batch_size"
+    for N in nevent_vec
+        for batch_size in batch_size_vec
+            @info "Adding benchmark problem: dtype=$out_type, dim=$problem_size_arg, Neve=$N, Nbatch=$batch_size"
 
-                __group[batch_size][N] = @benchmarkable @sb(
-                    begin
-                        sample_kernel(
-                            target,
-                            proposal,
-                            max_val,
-                            output;
-                            ndrange = $batch_size
-                        )
-                        output.level .= zero(UInt32)
-                    end
-                ) setup = begin
-                    # Allocate output buffers
-                    output = OutBuffer(
-                        get_backend($SAMPLER),
-                        input_type($SAMPLER),
-                        output_type($SAMPLER),
-                        $N + $batch_size # one additional batch for safety
+            __group[batch_size][N] = @benchmarkable @sb(
+                begin
+                    sample_kernel(
+                        target,
+                        proposal,
+                        max_val,
+                        output;
+                        ndrange = $batch_size
                     )
-
-                    sample_kernel = RejectionSamplers.sample_batchless_kernel($BACKEND, 32)
-                    backend = get_backend($SAMPLER)
-                    target = target_distribution($SAMPLER)
-                    proposal = proposal_distribution($SAMPLER)
-                    max_val = maximum_value($SAMPLER)
+                    output.level .= zero(UInt32)
                 end
+            ) setup = begin
+                # Allocate output buffers
+                output = OutBuffer(
+                    get_backend($SAMPLER),
+                    input_type($SAMPLER),
+                    output_type($SAMPLER),
+                    $N + $batch_size # one additional batch for safety
+                )
+
+                sample_kernel = RejectionSamplers.sample_batchless_kernel($BACKEND, 32)
+                backend = get_backend($SAMPLER)
+                target = target_distribution($SAMPLER)
+                proposal = proposal_distribution($SAMPLER)
+                max_val = maximum_value($SAMPLER)
             end
         end
     end
