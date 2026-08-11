@@ -1,8 +1,6 @@
 bench_name = "multi_stage"
 @info "Adding benchmark: $bench_name"
-nevent_vec = 2 .^ (5:6)
 @info "used nevents: $nevent_vec"
-batch_size_vec = 2 .^ (5:6)
 @info "used batch sizes: $batch_size_vec"
 
 group = addgroup!(SUITE, bench_name)

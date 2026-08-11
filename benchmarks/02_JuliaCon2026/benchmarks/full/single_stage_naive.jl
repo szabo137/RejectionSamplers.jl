@@ -1,6 +1,5 @@
 bench_name = "single_stage_naive"
 @info "Adding benchmark: $bench_name"
-nevent_vec = 2 .^ (5:6)
 @info "used nevents: $nevent_vec"
 
 group = addgroup!(SUITE, bench_name)

@@ -8,7 +8,10 @@ using RejectionSamplers
 using TruncatedGaussians
 using OnePhotonEmission
 
-DATADIR = "data"
+nevent_vec = 2 .^ (5:6)
+batch_size_vec = 2 .^ (5:6)
+
+DATADIR = "talk_data"
 
 SAVE_RESULTS = true
 
