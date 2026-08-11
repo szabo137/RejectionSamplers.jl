@@ -1,7 +1,9 @@
 [deps]
+AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Metal = "dde4c033-4e86-420c-a63e-0dd931031962"

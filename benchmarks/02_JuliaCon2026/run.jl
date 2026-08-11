@@ -8,8 +8,8 @@ using RejectionSamplers
 using TruncatedGaussians
 using OnePhotonEmission
 
-nevent_vec = 2 .^ (5:6)
-batch_size_vec = 2 .^ (5:6)
+nevent_vec = (2^20,2^25,) 
+batch_size_vec = (2^20,2^25,) 
 
 DATADIR = "talk_data"
 
@@ -129,8 +129,9 @@ if backend_arg == "CUDA"
     CUDA.versioninfo()
 
     const BACKEND = CUDABackend()
-    const DTYPES = (Float32, Float64)
-    const DEVICE = replace(lowercase(CUDA.name(d)), " " => "-")
+    #const DTYPES = (Float32, Float64)
+    const DTYPES = (Float32, )
+    #const DEVICE = replace(lowercase(CUDA.name(CUDA.device)), " " => "-")
 
     macro sb(ex...)
         return quote
@@ -167,8 +168,8 @@ elseif backend_arg == "AMDGPU"
     AMDGPU.versioninfo()
 
 
-    const BACKEND = AMDGPUBackend()
-    const DTYPES = (Float32, Float64)
+    const BACKEND = ROCBackend()
+    const DTYPES = (Float32,)
     const DEVICE = replace(lowercase(AMDGPU.HIP.name(AMDGPU.device())), " " => "-")
 
     macro sb(ex...)
